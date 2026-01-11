@@ -1,0 +1,440 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  Search, Download, Plus, Trash2, ChevronUp, ChevronDown, 
+  FileUp, FileSpreadsheet, Loader2, AlertCircle, 
+  FilterX, BarChart3, Table as TableIcon, PieChart, Activity,
+  Type, Layers, TrendingUp, MapPin, CheckCircle2,
+  PlusCircle, XCircle, Save, Settings, Layout, Grid2X2, MousePointer2,
+  Upload
+} from 'lucide-react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  PieChart as RePie, Pie, Cell, Legend
+} from 'recharts';
+
+const App = () => {
+  // --- State Yönetimi ---
+  const [data, setData] = useState([]);
+  const [headers, setHeaders] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('data'); 
+  const [isSetup, setIsSetup] = useState(true);
+
+  // Başlangıç Boyut State'leri
+  const [initialRows, setInitialRows] = useState(5);
+  const [initialCols, setInitialCols] = useState(4);
+
+  // Grafik Ayarları
+  const [chartXKey, setChartXKey] = useState('');
+  const [chartYKey, setChartYKey] = useState('');
+
+  const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
+
+  // --- Kütüphane Yükleme ---
+  useEffect(() => {
+    if (!window.XLSX) {
+      const script = document.createElement('script');
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      script.async = true;
+      document.head.appendChild(script);
+    }
+  }, []);
+
+  // --- Excel İşleme Fonksiyonu ---
+  const processExcelData = (file) => {
+    if (!file || !window.XLSX) return;
+    setIsLoading(true);
+    setError(null);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const workbook = window.XLSX.read(evt.target.result, { type: 'array', cellDates: true });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = window.XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+
+        if (rows.length === 0) throw new Error("Dosya boş görünüyor.");
+
+        // Başlık satırını tahmin et
+        let headerIdx = 0;
+        let maxCols = 0;
+        for (let i = 0; i < Math.min(rows.length, 12); i++) {
+          const filledCount = rows[i].filter(cell => String(cell).trim() !== "").length;
+          if (filledCount > maxCols) { maxCols = filledCount; headerIdx = i; }
+        }
+
+        const rawHeaders = rows[headerIdx].map((h, i) => String(h || "").trim() || `Sütun ${i + 1}`);
+        const body = rows.slice(headerIdx + 1)
+          .filter(row => row.some(cell => String(cell).trim() !== ""))
+          .map((row, idx) => {
+            const obj = { id: `row-${idx}-${Date.now()}` };
+            rawHeaders.forEach((h, i) => {
+              let val = row[i];
+              obj[h] = val instanceof Date ? val.toLocaleDateString('tr-TR') : String(val ?? '').trim();
+            });
+            return obj;
+          });
+        
+        setHeaders(rawHeaders);
+        setData(body);
+        setIsSetup(false);
+        setChartXKey(rawHeaders[0]);
+      } catch (err) {
+        setError("Dosya okuma hatası: " + err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  // --- Tabloyu Başlatma ---
+  const handleCreateEmptyTable = () => {
+    const rowsCount = parseInt(initialRows);
+    const colsCount = parseInt(initialCols);
+
+    if (isNaN(rowsCount) || isNaN(colsCount) || rowsCount < 1 || colsCount < 1) {
+      setError("Müdürüm, lütfen geçerli satır ve sütun sayıları giriniz.");
+      return;
+    }
+
+    const newHeaders = Array.from({ length: colsCount }, (_, i) => `Sütun ${i + 1}`);
+    const newData = Array.from({ length: rowsCount }, (_, rowIndex) => {
+      const row = { id: `row-${rowIndex}-${Date.now()}` };
+      newHeaders.forEach(h => row[h] = "");
+      return row;
+    });
+
+    setHeaders(newHeaders);
+    setData(newData);
+    setIsSetup(false);
+    setChartXKey(newHeaders[0]);
+    setError(null);
+  };
+
+  // --- Hücre Değişiklikleri ---
+  const handleCellChange = (rowId, header, value) => {
+    setData(prev => prev.map(row => 
+      row.id === rowId ? { ...row, [header]: value } : row
+    ));
+  };
+
+  const handleHeaderChange = (index, value) => {
+    const oldHeader = headers[index];
+    const newHeaders = [...headers];
+    newHeaders[index] = value;
+    
+    setData(prev => prev.map(row => {
+      const newRow = { ...row, [value]: row[oldHeader] };
+      delete newRow[oldHeader];
+      return newRow;
+    }));
+    setHeaders(newHeaders);
+    if (chartXKey === oldHeader) setChartXKey(value);
+    if (chartYKey === oldHeader) setChartYKey(value);
+  };
+
+  const addNewRow = () => {
+    const newRow = { id: `row-${Date.now()}` };
+    headers.forEach(h => newRow[h] = "");
+    setData([...data, newRow]);
+  };
+
+  const addNewColumn = () => {
+    const nextColNum = headers.length + 1;
+    const newColName = `Sütun ${nextColNum}`;
+    setHeaders([...headers, newColName]);
+    setData(prev => prev.map(row => ({ ...row, [newColName]: "" })));
+  };
+
+  const deleteRow = (id) => {
+    setData(data.filter(r => r.id !== id));
+  };
+
+  // --- Filtreleme ve Analiz ---
+  const filteredData = useMemo(() => {
+    let result = [...data];
+    if (searchTerm) {
+      const s = searchTerm.toLowerCase();
+      result = result.filter(row => 
+        Object.values(row).some(v => String(v || "").toLowerCase().includes(s))
+      );
+    }
+    if (sortConfig.key) {
+      result.sort((a, b) => {
+        const vA = a[sortConfig.key];
+        const vB = b[sortConfig.key];
+        const nA = parseFloat(String(vA).replace(',', '.'));
+        const nB = parseFloat(String(vB).replace(',', '.'));
+        if (!isNaN(nA) && !isNaN(nB)) return sortConfig.direction === 'asc' ? nA - nB : nB - nA;
+        return sortConfig.direction === 'asc' ? String(vA).localeCompare(String(vB), 'tr') : String(vB).localeCompare(String(vA), 'tr');
+      });
+    }
+    return result;
+  }, [data, searchTerm, sortConfig]);
+
+  const dashboardAnalytics = useMemo(() => {
+    if (data.length === 0) return { pieData: [], barData: [], topCategory: '-', totalNumeric: 0 };
+
+    const counts = {};
+    data.forEach(row => {
+      const val = row[chartXKey] || 'Boş';
+      counts[val] = (counts[val] || 0) + 1;
+    });
+    const pieData = Object.entries(counts).map(([name, value]) => ({ name: String(name), value }))
+      .sort((a,b) => b.value - a.value).slice(0, 8);
+
+    const barMap = {};
+    data.forEach(row => {
+      const x = String(row[chartXKey] || 'Diğer');
+      const yVal = chartYKey ? parseFloat(String(row[chartYKey]).replace(',', '.')) || 0 : 1;
+      barMap[x] = (barMap[x] || 0) + yVal;
+    });
+    const barData = Object.entries(barMap).map(([name, value]) => ({ name: String(name), value }))
+      .sort((a,b) => b.value - a.value).slice(0, 10);
+
+    const totalNumeric = chartYKey ? data.reduce((sum, r) => sum + (parseFloat(String(r[chartYKey]).replace(',', '.')) || 0), 0) : data.length;
+
+    return { pieData, barData, topCategory: pieData[0]?.name || '-', totalNumeric };
+  }, [data, chartXKey, chartYKey]);
+
+  const getCellClass = (val) => {
+    const v = String(val || "").toLowerCase();
+    if (['tamamlandı', 'yapıldı', 'bitti', 'evet', 'ok'].includes(v)) return 'text-emerald-600 font-bold bg-emerald-50/50';
+    if (['beklemede', 'hayır', 'iptal', 'yapılmadı'].includes(v)) return 'text-rose-600 font-bold bg-rose-50/50';
+    if (['devam', 'aktif', 'çalışılıyor'].includes(v)) return 'text-amber-600 font-bold bg-amber-50/50';
+    return 'text-slate-600';
+  };
+
+  return (
+    <div className="min-h-screen bg-[#f8fafc] font-sans text-slate-900 pb-10">
+      <div className="max-w-[1500px] mx-auto p-4 md:p-6">
+        
+        {/* Header Section */}
+        <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-white p-4 rounded-3xl shadow-sm border border-slate-200">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100">
+              <Grid2X2 className="text-white" size={24} />
+            </div>
+            <div>
+              <h1 className="text-xl font-black text-slate-800 tracking-tight italic">SmartTable Dash</h1>
+              <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Müdürüm Özel Modül</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {!isSetup && (
+              <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
+                <button onClick={() => setActiveTab('data')} className={`px-5 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'data' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500'}`}>Veri Girişi</button>
+                <button onClick={() => setActiveTab('charts')} className={`px-5 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'charts' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500'}`}>Analiz Paneli</button>
+              </div>
+            )}
+            
+            <div className="flex gap-2">
+              <input type="file" id="global-ex-up" className="hidden" accept=".xlsx, .xls, .csv" onChange={(e) => processExcelData(e.target.files[0])} />
+              <label htmlFor="global-ex-up" className="cursor-pointer flex items-center gap-2 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all">
+                <Upload size={14} /> Excel Yükle
+              </label>
+            </div>
+          </div>
+        </header>
+
+        {error && (
+          <div className="mb-4 p-4 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center gap-3">
+            <AlertCircle size={20} />
+            <span className="text-sm font-bold">{error}</span>
+          </div>
+        )}
+
+        {isSetup ? (
+          <div className="max-w-xl mx-auto py-12 animate-in zoom-in-95 duration-500">
+            <div className="bg-white rounded-[3rem] p-10 border border-slate-200 shadow-2xl text-center relative overflow-hidden">
+               <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none rotate-12">
+                 <FileSpreadsheet size={160} />
+               </div>
+              <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
+                <Layout size={40} />
+              </div>
+              <h2 className="text-2xl font-black text-slate-800 mb-2">Tablo Boyutunu Belirle</h2>
+              <p className="text-slate-400 text-sm mb-8">Veya yukarıdaki butondan Excel dosyanızı yükleyin.</p>
+              
+              <div className="grid grid-cols-2 gap-6 mb-10 text-left">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Satır Sayısı</label>
+                  <input type="number" value={initialRows} onChange={(e) => setInitialRows(e.target.value)} className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-4 focus:ring-indigo-100 outline-none font-bold text-center" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Sütun Sayısı</label>
+                  <input type="number" value={initialCols} onChange={(e) => setInitialCols(e.target.value)} className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-4 focus:ring-indigo-100 outline-none font-bold text-center" />
+                </div>
+              </div>
+
+              <button onClick={handleCreateEmptyTable} className="w-full bg-indigo-600 text-white py-5 rounded-[2rem] font-black text-lg shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95 flex items-center justify-center gap-3">
+                <PlusCircle size={24} /> Tabloyu Oluştur
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: "Toplam Satır", val: String(data.length), icon: Layers, color: "text-indigo-600 bg-indigo-50" },
+                { label: `Toplam ${chartYKey || 'Birim'}`, val: String(dashboardAnalytics.totalNumeric.toLocaleString('tr-TR')), icon: TrendingUp, color: "text-emerald-600 bg-emerald-50" },
+                { label: "Baskın Kategori", val: String(dashboardAnalytics.topCategory), icon: MapPin, color: "text-amber-600 bg-amber-50" },
+                { label: "Sütun Sayısı", val: `${headers.length} Başlık`, icon: Type, color: "text-rose-600 bg-rose-50" }
+              ].map((stat, i) => (
+                <div key={i} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${stat.color}`}> <stat.icon size={18} /> </div>
+                  <div className="overflow-hidden">
+                    <p className="text-[9px] font-black uppercase text-slate-400 leading-none mb-1 truncate">{stat.label}</p>
+                    <p className="text-sm font-black text-slate-800 truncate">{stat.val}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {activeTab === 'charts' ? (
+              <div className="space-y-6">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap gap-6 items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Gruplama:</span>
+                    <select value={chartXKey} onChange={(e) => setChartXKey(e.target.value)} className="bg-slate-50 border-none rounded-lg px-4 py-2 text-xs font-bold text-indigo-600 outline-none ring-1 ring-slate-100 focus:ring-indigo-200">
+                      {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Değer:</span>
+                    <select value={chartYKey} onChange={(e) => setChartYKey(e.target.value)} className="bg-slate-50 border-none rounded-lg px-4 py-2 text-xs font-bold text-emerald-600 outline-none ring-1 ring-slate-100 focus:ring-emerald-200">
+                      <option value="">(Satır Sayısı)</option>
+                      {headers.filter(h => data.some(r => !isNaN(parseFloat(String(r[h]).replace(',', '.'))))).map(h => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm h-[480px] flex flex-col">
+                    <h3 className="text-xs font-black mb-8 flex items-center gap-2 text-slate-700 uppercase tracking-widest"><PieChart size={18} className="text-indigo-600" /> Dağılım Analizi</h3>
+                    <div className="flex-1">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RePie>
+                          <Pie data={dashboardAnalytics.pieData} innerRadius={80} outerRadius={120} paddingAngle={8} dataKey="value" nameKey="name">
+                            {dashboardAnalytics.pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} cornerRadius={10} />)}
+                          </Pie>
+                          <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
+                          <Legend iconType="circle" />
+                        </RePie>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm h-[480px] flex flex-col">
+                    <h3 className="text-xs font-black mb-8 flex items-center gap-2 text-slate-700 uppercase tracking-widest"><BarChart3 size={18} className="text-emerald-600" /> Kıyaslama Raporu</h3>
+                    <div className="flex-1">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={dashboardAnalytics.barData}>
+                          <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 'bold', fill: '#94a3b8'}} />
+                          <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8'}} />
+                          <Tooltip cursor={{fill: '#f8fafc'}} />
+                          <Bar dataKey="value" fill="#6366f1" radius={[12, 12, 0, 0]} barSize={40}>
+                             {dashboardAnalytics.barData.map((_, index) => <Cell key={index} fill={index % 2 === 0 ? '#6366f1' : '#818cf8'} />)}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col sm:flex-row gap-4 items-center justify-between shadow-sm">
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <div className="relative w-full sm:w-64 group">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={16} />
+                      <input type="text" placeholder="Tabloda süz..." className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border-none rounded-xl focus:ring-4 focus:ring-indigo-50 outline-none text-xs font-bold transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                    </div>
+                    <button onClick={addNewRow} className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"> <Plus size={16} /> Satır Ekle </button>
+                    <button onClick={addNewColumn} className="flex items-center gap-2 bg-white text-indigo-600 border border-indigo-100 px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-50 transition-all"> <PlusCircle size={16} /> Sütun Ekle </button>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => {
+                        if (!window.XLSX) return;
+                        const exportable = data.map(({id, ...rest}) => rest);
+                        const ws = window.XLSX.utils.json_to_sheet(exportable);
+                        const wb = window.XLSX.utils.book_new();
+                        window.XLSX.utils.book_append_sheet(wb, ws, "Rapor");
+                        window.XLSX.writeFile(wb, "Rapor_Export.xlsx");
+                      }}
+                      className="bg-emerald-50 text-emerald-600 p-2.5 rounded-xl hover:bg-emerald-600 hover:text-white transition-all"
+                      title="Excel İndir"
+                    >
+                      <FileSpreadsheet size={20} />
+                    </button>
+                    <button onClick={() => { setData([]); setHeaders([]); setIsSetup(true); }} className="bg-rose-50 text-rose-500 p-2.5 rounded-xl hover:bg-rose-600 hover:text-white transition-all"> <Trash2 size={20} /> </button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="overflow-x-auto custom-scrollbar max-h-[65vh]">
+                    <table className="w-full text-left border-separate border-spacing-0">
+                      <thead>
+                        <tr>
+                          {headers.map((header, idx) => (
+                            <th key={idx} className="sticky top-0 z-20 bg-slate-50/80 backdrop-blur-md px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
+                              <div className="flex items-center gap-2">
+                                <input value={header} onChange={(e) => handleHeaderChange(idx, e.target.value)} className="bg-transparent border-none focus:ring-2 focus:ring-indigo-200 rounded px-1 outline-none text-indigo-600 font-black w-32" />
+                                <button onClick={() => setHeaders(headers.filter((_, i) => i !== idx))} className="opacity-0 group-hover:opacity-100 text-rose-300 hover:text-rose-500"> <XCircle size={10} /> </button>
+                              </div>
+                            </th>
+                          ))}
+                          <th className="sticky top-0 z-20 bg-slate-50/80 backdrop-blur-md px-4 py-4 border-b border-slate-200 text-center"> <Settings size={14} className="text-slate-300 mx-auto" /> </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredData.map((row) => (
+                          <tr key={row.id} className="hover:bg-slate-50/50 transition-colors group">
+                            {headers.map((header) => (
+                              <td key={`${row.id}-${header}`} className="px-3 py-2 border-r border-slate-50 last:border-none">
+                                <input type="text" value={String(row[header] || "")} onChange={(e) => handleCellChange(row.id, header, e.target.value)} className={`w-full px-3 py-2 rounded-lg text-xs font-medium outline-none border-transparent hover:border-slate-200 border transition-all focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 ${getCellClass(row[header])}`} />
+                              </td>
+                            ))}
+                            <td className="px-4 py-2 text-center">
+                              <button onClick={() => deleteRow(row.id)} className="opacity-0 group-hover:opacity-100 text-rose-300 hover:text-rose-500 transition-all"> <Trash2 size={14} /> </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {filteredData.length === 0 && (
+                    <div className="py-20 text-center text-slate-300 flex flex-col items-center gap-4">
+                      <MousePointer2 size={48} className="opacity-10" />
+                      <p className="font-bold text-sm">Veri girişi yapılmamış müdürüm.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <footer className="mt-8 pt-6 border-t border-slate-200 flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+          <div className="flex items-center gap-2"> <span className="w-2 h-2 bg-indigo-500 rounded-full"></span> Sistem Aktif: Dinamik Veri Yönetimi </div>
+          <div>SmartTable Dashboard © 2026</div>
+        </footer>
+      </div>
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 20px; border: 2px solid transparent; background-clip: content-box; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; background-clip: content-box; }
+      `}</style>
+    </div>
+  );
+};
+
+export default App;
