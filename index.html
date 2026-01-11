@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartTable Dash v4 - Müdürüm Özel</title>
+    <title>SmartTable Dash v4</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
@@ -35,8 +35,8 @@
                 <i data-lucide="grid-2x2" class="text-white"></i>
             </div>
             <div>
-                <h1 class="text-xl font-black text-slate-800 tracking-tight italic">SmartTable Dash HTML</h1>
-                <p class="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Müdürüm Özel Modül</p>
+                <h1 class="text-xl font-black text-slate-800 tracking-tight italic">SmartTable Dash</h1>
+                <p class="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Veri Analiz Sistemi</p>
             </div>
         </div>
 
@@ -65,7 +65,7 @@
                 <i data-lucide="layout" size="40"></i>
             </div>
             <h2 class="text-2xl font-black text-slate-800 mb-2">Tablo Boyutunu Belirle</h2>
-            <p class="text-slate-400 text-sm mb-8">Kaç satır ve sütunla başlamak istersiniz müdürüm?</p>
+            <p class="text-slate-400 text-sm mb-8">Kaç satır ve sütunla başlamak istersiniz?</p>
             
             <div class="grid grid-cols-2 gap-6 mb-10 text-left">
                 <div class="space-y-2">
@@ -130,7 +130,7 @@
                 </div>
                 <div id="empty-state" class="py-20 text-center text-slate-300 flex flex-col items-center gap-4" style="display: none;">
                     <i data-lucide="mouse-pointer-2" size="48" class="opacity-10"></i>
-                    <p class="font-bold text-sm">Veri girişi yapılmamış müdürüm.</p>
+                    <p class="font-bold text-sm">Veri girişi yapılmamış.</p>
                 </div>
             </div>
         </div>
@@ -176,7 +176,7 @@
             <span class="w-2 h-2 bg-indigo-500 rounded-full"></span>
             Sistem Aktif: Dinamik Veri Yönetimi
         </div>
-        <div>SmartTable HTML v1 © 2026</div>
+        <div>SmartTable Dashboard © 2026</div>
     </footer>
 </div>
 
@@ -348,7 +348,7 @@
 
         const stats = [
             { label: "Toplam Kayıt", val: data.length, icon: "layers", color: "text-indigo-600 bg-indigo-50" },
-            { label: "Toplam Veri", val: totalVal.toLocaleString('tr-TR'), icon: "trending-up", color: "text-emerald-600 bg-emerald-50" },
+            { label: "Toplam Değer", val: totalVal.toLocaleString('tr-TR'), icon: "trending-up", color: "text-emerald-600 bg-emerald-50" },
             { label: "Sütun Sayısı", val: headers.length, icon: "type", color: "text-rose-600 bg-rose-50" },
             { label: "Durum", val: "Aktif", icon: "activity", color: "text-amber-600 bg-amber-50" }
         ];
@@ -382,6 +382,8 @@
     function renderCharts() {
         const xKey = document.getElementById('chart-x-select').value;
         const yKey = document.getElementById('chart-y-select').value;
+
+        if(!xKey) return;
 
         const counts = {};
         const sums = {};
@@ -437,7 +439,6 @@
         const file = e.target.files[0];
         if (!file || !window.XLSX) return;
 
-        setIsLoading(true);
         const reader = new FileReader();
         reader.onload = (evt) => {
             const bstr = evt.target.result;
@@ -446,7 +447,6 @@
             const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
 
             if (json.length > 0) {
-                // Find header row
                 let headerIdx = 0;
                 let maxCols = 0;
                 for (let i = 0; i < Math.min(json.length, 12); i++) {
@@ -466,7 +466,6 @@
                         return obj;
                     });
                 
-                setIsLoading(false);
                 startApp();
             }
         };
@@ -481,7 +480,7 @@
         const ws = XLSX.utils.json_to_sheet(exportable);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Rapor");
-        XLSX.writeFile(wb, "Rapor_Mudurum.xlsx");
+        XLSX.writeFile(wb, "Veri_Analiz_Raporu.xlsx");
     }
 
     function resetApp() {
@@ -490,12 +489,6 @@
         document.getElementById('setup-screen').style.display = 'block';
         document.getElementById('navControls').style.display = 'none';
         document.getElementById('main-content').style.display = 'none';
-        setIsLoading(false);
-    }
-
-    function setIsLoading(status) {
-        // Simple indicator logic
-        if(status) console.log("Yükleniyor...");
     }
 </script>
 </body>
